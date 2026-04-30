@@ -168,6 +168,17 @@ const day = {
     step: (d, n) => d.setDate(d.getDate() + n),
 };
 
+const week = {
+    names: ["w", "wk", "week", "weeks"],
+    length: day.length * 7,
+    start(d, o) {
+        const s = _startOfDay(d, o);
+        s.setDate(s.getDate() - s.getDay());
+        return s;
+    },
+    step: (d, n) => d.setDate(d.getDate() + n * 7),
+};
+
 const year = {
     names: ["y", "yr", "year", "years"],
     length: day.length * (365 * 400 + 97) / 400,
