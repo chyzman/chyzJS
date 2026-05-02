@@ -70,6 +70,18 @@ function _startOfFiscalYear(d, o) {
 
 const _trunc = step => d => new Date(Math.floor(+d / step) * step);
 
+function _expandNames(names) {
+    const out = [];
+    for (const n of names) {
+        if (!n.includes("?")) { out.push(n); continue; }
+        const parts = n.split("?");
+        let acc = parts[0];
+        out.push(acc);
+        for (let i = 1; i < parts.length; i++) { acc += parts[i]; out.push(acc); }
+    }
+    return out;
+}
+
 // ── Chronos ───────────────────────────────────────────────────────────────────
 
 class Chronos {
@@ -88,11 +100,19 @@ class Chronos {
         this._defaults = {...pluginDefaults, ...options};
 
         this._unitMap = new Map();
+        this._csNames = [];
         for (const u of Object.values(this.periods)) {
             u._fixed = !u.step && u.length != null;
             if (!u.step && u.length != null) u.step = (d, n) => d.setTime(d.getTime() + n * u.length);
             if (!u.start && u.length != null) u.start = _trunc(u.length);
-            for (const n of u.names) this._unitMap.set(n.toLowerCase(), u);
+            const expanded = _expandNames(u.names);
+            const ci = expanded.filter(n => n === n.toLowerCase());
+            const cs = expanded.filter(n => n !== n.toLowerCase());
+            for (const n of ci) this._unitMap.set(n, u);
+            for (const n of cs) {
+                this._unitMap.set(n, u);
+                this._csNames.push({ name: n, canonical: ci[0] ?? n.toLowerCase() });
+            }
         }
 
         this._constantMap = new Map();
@@ -105,7 +125,7 @@ class Chronos {
     }
 
     _findUnit(name) {
-        return this._unitMap.get(name.toLowerCase()) ?? null;
+        return this._unitMap.get(name) ?? this._unitMap.get(name.toLowerCase()) ?? null;
     }
 
     _findConstant(name) {
@@ -142,34 +162,34 @@ class Chronos {
 // ── Periods ───────────────────────────────────────────────────────────────────
 
 const ms = {
-    names: ["ms", "millisecond", "milliseconds"],
+    names: ["ms", "milli?second?s"],
     length: 1,
 };
 
 const second = {
-    names: ["s", "sec", "second", "seconds"],
+    names: ["s", "sec", "second?s"],
     length: ms.length * 1000,
 };
 
 const minute = {
-    names: ["m", "min", "minute", "minutes"],
+    names: ["m", "min", "minute?s"],
     length: second.length * 60,
 };
 
 const hour = {
-    names: ["h", "hr", "hour", "hours"],
+    names: ["h", "hr", "hour?s"],
     length: minute.length * 60,
 };
 
 const day = {
-    names: ["d", "day", "days"],
+    names: ["d", "day?s"],
     length: hour.length * 24,
     start: _startOfDay,
     step: (d, n) => d.setDate(d.getDate() + n),
 };
 
 const week = {
-    names: ["w", "wk", "week", "weeks"],
+    names: ["w", "wk", "week?s"],
     length: day.length * 7,
     start(d, o) {
         const s = _startOfDay(d, o);
@@ -180,7 +200,7 @@ const week = {
 };
 
 const year = {
-    names: ["y", "yr", "year", "years"],
+    names: ["y", "yr", "year?s"],
     length: day.length * (365 * 400 + 97) / 400,
     start(d, o) {
         const s = _startOfDay(d, o);
@@ -202,7 +222,7 @@ const year = {
 };
 
 const month = {
-    names: ["mo", "month", "months"],
+    names: ["M", "mo", "month?s"],
     length: (365 * 400 + 97) / 400 * 24 * 60 * 60 * 1000 / 12,
     start(d, o) {
         const s = _startOfDay(d, o);
@@ -224,7 +244,7 @@ const month = {
 };
 
 const quarter = {
-    names: ["q", "quarter", "quarters"],
+    names: ["q", "quarter?s"],
     length: (365 * 400 + 97) / 400 * 24 * 60 * 60 * 1000 / 4,
     start(d, o) {
         const s = _startOfDay(d, o);
@@ -246,25 +266,25 @@ const quarter = {
 
 
 const bd = {
-    names: ["bd", "bday", "bdays", "business day", "business days"],
+    names: ["bd", "bday?s", "business day?s"],
     step: _stepBusinessDays,
 };
 
 const bh = {
-    names: ["bh", "bhour", "bhours", "business hour", "business hours"],
+    names: ["bh", "bhour?s", "business hour?s"],
     step: _stepBusinessHours,
 };
 
 const fy = {
-    names: ["fy", "fiscal year", "fiscal-year"],
-    length: (365 * 400 + 97) / 400 * 24 * 60 * 60 * 1000,
+    names: ["fy", "fiscal year?s", "fiscal-year?s"],
+    length: year.length,
     start: _startOfFiscalYear,
     step: (d, n) => d.setFullYear(d.getFullYear() + n),
 };
 
 const fq = {
-    names: ["fq", "fiscal quarter", "fiscal-quarter"],
-    length: (365 * 400 + 97) / 400 * 24 * 60 * 60 * 1000 / 4,
+    names: ["fq", "fiscal quarter?s", "fiscal-quarter?s"],
+    length: year.length / 4,
     start(d, o) {
         const s = _startOfFiscalYear(d, o);
         const monthsIn = (_startOfDay(d, o).getMonth() - s.getMonth() + 12) % 12;
@@ -272,6 +292,31 @@ const fq = {
         return s;
     },
     step: (d, n) => d.setMonth(d.getMonth() + n * 3),
+};
+
+const semiMonth = {
+    names: ["sm", "semi-month?s", "semimonth?s"],
+    length: month.length / 2,
+    start(d, o) {
+        const s = _startOfDay(d, o);
+        s.setDate(s.getDate() >= 16 ? 16 : 1);
+        return s;
+    },
+    step(d, n) {
+        const w = Math.trunc(n), f = n - w;
+        let rem = Math.abs(w);
+        const dir = w < 0 ? -1 : 1;
+        while (rem-- > 0) {
+            if (dir > 0) {
+                if (d.getDate() < 16) d.setDate(16);
+                else d.setMonth(d.getMonth() + 1, 1);
+            } else {
+                if (d.getDate() >= 16) d.setDate(1);
+                else d.setMonth(d.getMonth() - 1, 16);
+            }
+        }
+        if (f) d.setTime(d.getTime() + f * month.length / 2);
+    },
 };
 
 // ── Constants & time names ────────────────────────────────────────────────────
@@ -295,7 +340,7 @@ const tomorrow = {
 
 // ── Plugin bundles ────────────────────────────────────────────────────────────
 
-const CorePeriods = {periods: {ms, second, minute, hour, day, week, month, quarter, year}};
+const CorePeriods = {periods: {ms, second, minute, hour, day, week, month, semiMonth, quarter, year}};
 const BusinessPeriods = {periods: {bd, bh}};
 const FiscalPeriods = {periods: {fy, fq}};
 const CoreConstants = {constants: {now, today, yesterday, tomorrow}};
@@ -308,7 +353,7 @@ const WeekdayPeriods = {
                 .format(new Date(2024, 0, 7 + i)).toLowerCase();
             return [short, {
                 names: [short, long],
-                length: 7 * 24 * 60 * 60 * 1000,
+                length: week.length,
                 start(d, o) {
                     const s = _startOfDay(d, o);
                     s.setDate(s.getDate() - (s.getDay() - i + 7) % 7);

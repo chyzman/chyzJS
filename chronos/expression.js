@@ -15,11 +15,21 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 (function () {
+    function _escRe(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
+
     function _compile(t) {
-        const unitPat     = [...t._unitMap.keys()].sort((a, b) => b.length - a.length).join("|");
-        const anchorPat   = [...t._unitMap.keys()].sort((a, b) => b.length - a.length).join("|");
+        const ciKeys = k => k === k.toLowerCase();
+        const unitPat     = [...t._unitMap.keys()].filter(ciKeys).sort((a, b) => b.length - a.length).join("|");
+        const anchorPat   = [...t._unitMap.keys()].filter(ciKeys).sort((a, b) => b.length - a.length).join("|");
         const constantPat = [...t._constantMap.keys()].sort((a, b) => b.length - a.length).join("|");
         const timeNamePat = Object.keys(t.timeNames).sort((a, b) => b.length - a.length).join("|");
+
+        t._csPreprocess = (t._csNames ?? [])
+            .slice().sort((a, b) => b.name.length - a.name.length)
+            .map(({ name, canonical }) => [
+                new RegExp(`(?<![a-zA-Z])${_escRe(name)}(?![a-zA-Z])`, "g"),
+                canonical,
+            ]);
 
         t._re = {
             tzSuffix:     /\[([A-Za-z_]+(?:\/[A-Za-z_]+)*)\]$/,
@@ -45,16 +55,15 @@
     }
 
     function _one(t, str, options) {
-        str = str.trim()
-            .replace(/\|\|/g, "")
-            .replace(/([+-]\d+(?:\.\d+)?[ \t]*)M(?![a-zA-Z])/g, "$1mo")
-            .replace(/\/M(?![a-zA-Z])/g, "/mo");
+        str = str.trim().replace(/\|\|/g, "");
 
         const tzMatch = str.match(t._re.tzSuffix);
         if (tzMatch) {
             str     = str.slice(0, tzMatch.index).trim();
             options = { ...options, tz: tzMatch[1] };
         }
+
+        for (const [pat, rep] of t._csPreprocess) str = str.replace(pat, rep);
         const opts = t._opts(options);
 
         let date, anchor, rest;
