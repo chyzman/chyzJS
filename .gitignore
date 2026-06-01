@@ -1,0 +1,17 @@
+node_modules/
+dist/
+
+# Build
+*.log
+
+# IDE
+.idea/
+.vscode/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# OS
+.DS_Store
+Thumbs.db

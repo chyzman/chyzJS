@@ -2,7 +2,19 @@
   "name": "@chyzman/chronos",
   "version": "1.0.0",
   "type": "module",
+  "scripts": {
+    "build": "tsdown && mv dist/chronos.iife.js dist/chronos.js"
+  },
   "exports": {
-    ".": "./index.js"
+    ".": {
+      "types": "./dist/chronos.esm.d.ts",
+      "import": "./dist/chronos.esm.js",
+      "default": "./dist/chronos.js"
+    }
+  },
+  "devDependencies": {
+    "tsdown": "latest",
+    "typescript": "latest",
+    "unrun": "^0.3.0"
   }
 }

@@ -1,0 +1,65 @@
+name: Build
+
+on:
+  push:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Detect changed modules
+        id: changes
+        run: |
+          if git rev-parse HEAD~1 > /dev/null 2>&1; then
+            changed=$(git diff --name-only HEAD~1 HEAD)
+          else
+            changed=$(git diff-tree --no-commit-id -r --name-only HEAD)
+          fi
+          modules=""
+          for dir in $(echo "$changed" | grep '/' | cut -d/ -f1 | sort -u); do
+            if [ -f "$dir/package.json" ] && cat "$dir/package.json" | grep -q '"build"'; then
+              modules="$modules$dir "
+            fi
+          done
+          modules="${modules% }"
+          echo "modules=$modules" >> $GITHUB_OUTPUT
+          echo "Changed modules: $modules"
+
+      - name: Install and build
+        if: steps.changes.outputs.modules != ''
+        run: |
+          for module in ${{ steps.changes.outputs.modules }}; do
+            echo "Building $module..."
+            pnpm install --dir $module
+            pnpm --dir $module build
+          done
+
+      - name: Collect assets
+        if: steps.changes.outputs.modules != ''
+        run: |
+          mkdir -p release-assets
+          for module in ${{ steps.changes.outputs.modules }}; do
+            [ -d "$module/dist" ] && cp $module/dist/* release-assets/
+          done
+
+      - name: Release
+        if: steps.changes.outputs.modules != ''
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          prerelease: ${{ github.ref_name != 'main' }}
+          files: release-assets/*
